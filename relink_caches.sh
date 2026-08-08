@@ -10,7 +10,7 @@
 
 set -uo pipefail
 
-GOINFRE="/goinfre/$USER/cache"
+GOINFRE="${GOINFRE_CACHE:-/goinfre/$USER/cache}"
 
 # home path under $HOME  ->  subdir name under $GOINFRE  ->  process to check
 LINKS=(
@@ -25,12 +25,31 @@ LINKS=(
   ".config/google-chrome/component_crx_cache|chrome-crx|chrome"
 )
 
-mkdir -p "$GOINFRE" || { echo "cannot create $GOINFRE" >&2; exit 1; }
-
 running() {
   [ -z "$1" ] && return 1
-  pgrep -u "$USER" -f "$1" >/dev/null 2>&1
+  # -x matches the process name exactly. Do NOT use -f here: it matches whole
+  # command lines, so any process merely mentioning "code" or "cursor" (this
+  # script included) would count as running and every dir would be skipped.
+  pgrep -u "$USER" -x "$1" >/dev/null 2>&1
 }
+
+# Your home is network-attached (iSCSI) and follows you between posts, but
+# /goinfre is a local disk and does not. If it is missing or unwritable here,
+# any symlink pointing into it is dangling -- turn those back into real dirs so
+# apps keep working, then stop. Nothing is deleted on this path.
+if ! mkdir -p "$GOINFRE" 2>/dev/null || [ ! -w "$GOINFRE" ]; then
+  echo "/goinfre unavailable on this machine -- restoring local cache dirs"
+  for entry in "${LINKS[@]}"; do
+    IFS='|' read -r rel _ _ <<<"$entry"
+    src="$HOME/$rel"
+    if [ -L "$src" ] && [ ! -d "$src" ]; then
+      rm -f "$src"
+      mkdir -p "$src"
+      echo "RESTORED $rel (now a real directory)"
+    fi
+  done
+  exit 0
+fi
 
 for entry in "${LINKS[@]}"; do
   IFS='|' read -r rel sub proc <<<"$entry"
