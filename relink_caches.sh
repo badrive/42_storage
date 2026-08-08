@@ -10,7 +10,10 @@
 
 set -uo pipefail
 
-GOINFRE="${GOINFRE_CACHE:-/goinfre/$USER/cache}"
+# id -un is the fallback: $USER is set in the systemd --user environment here,
+# but it is not guaranteed on every login setup.
+ME="${USER:-$(id -un)}"
+GOINFRE="${GOINFRE_CACHE:-/goinfre/$ME/cache}"
 
 # home path under $HOME  ->  subdir name under $GOINFRE  ->  process to check
 LINKS=(
@@ -78,10 +81,15 @@ for entry in "${LINKS[@]}"; do
     else
       echo "FAILED  $rel (left untouched)" >&2
     fi
-  else
-    mkdir -p "$(dirname "$src")"
+  elif [ -d "$(dirname "$src")" ]; then
+    # Nothing there yet, but the app's config dir exists -- pre-link so the
+    # cache lands on /goinfre the moment the app first writes it.
     ln -s "$dst" "$src"
     echo "LINKED  $rel -> $dst"
+  else
+    # App isn't installed on this machine. Don't conjure up its config dir.
+    rmdir "$dst" 2>/dev/null
+    echo "n/a     $rel (app not installed)"
   fi
 done
 
